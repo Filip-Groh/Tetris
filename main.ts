@@ -172,11 +172,10 @@ function removeLine(gamePlotArray: Array<Array<boolean>>) {
         }
     })
     fullLines.reverse()
-    gamePlotArray.forEach((yArray, y) => {
-        if (fullLines.find((value) => {
-            return y == value
-        }) != undefined) {
-            yArray = [false, false, false, false, false]
+    fullLines.forEach((value) => {
+        gamePlotArray[value] = [false, false, false, false, false]
+        for (let i = value; i > 0; i--) {
+            gamePlotArray[i] = gamePlotArray[i - 1]
         }
     })
     return gamePlotArray
@@ -216,6 +215,17 @@ input.onButtonPressed(Button.A, function() {
 })
 
 input.onButtonPressed(Button.B, function () {
+    const beforeMoveShape = copy(currentShape)
+    currentShape.points.forEach((value) => {
+        value.x += 1
+    })
+    if (checkCollision(globalGamePlotArray, currentShape)) {
+        currentShape = beforeMoveShape
+        return
+    }
+})
+
+input.onGesture(Gesture.TiltLeft, function () {
     const beforeMoveShape = copy(currentShape)
     currentShape.points.forEach((value) => {
         value.x += 1
