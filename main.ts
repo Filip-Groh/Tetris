@@ -1,4 +1,16 @@
 const frequence = 60
+const startingTime = 3000
+const rotationDirection = 90 // 90 - CCW, -90 - CW
+const scoreTable = {
+    one: 5,
+    two: 15,
+    three: 25
+}
+const dropTimeTable = {
+    under40: 2000,
+    under80: 1200,
+    under100: 800
+}
 
 type Point = {
     x: number,
@@ -11,16 +23,6 @@ type Shape = {
     pivotPoint: Point
 }
 
-let score = 0
-let lastDrop = control.millis()
-let globalGamePlotArray = [
-    [false, false, false, false, false],
-    [false, false, false, false, false],
-    [false, false, false, false, false],
-    [false, false, false, false, false],
-    [false, false, false, false, false]
-]
-
 enum State {
     Play,
     Win,
@@ -29,7 +31,11 @@ enum State {
     ScoreLost
 }
 
-let gameState = State.Play
+enum InputType {
+    A,
+    B,
+    Logo
+}
 
 function display(gamePlotArray: Array<Array<boolean>>): void {
     gamePlotArray.forEach((yArray, y) => {
@@ -45,7 +51,7 @@ function display(gamePlotArray: Array<Array<boolean>>): void {
 
 function generateShape(): Shape {
     const avalibleShapes = ["I", "O", "L", "J"]
-    const chosenShape = avalibleShapes[Math.round(Math.random() * avalibleShapes.length - 1)]
+    const chosenShape = avalibleShapes[Math.round(Math.random() * (avalibleShapes.length - 1))]
     let points = []
     let pivotPoint
     if (chosenShape === "I") {
@@ -84,7 +90,7 @@ function generateShape(): Shape {
         })
         pivotPoint = {
             x: 1.5,
-            y: 1.5
+            y: 0.5
         }
     } else if (chosenShape === "L") {
         points.push({
@@ -160,7 +166,6 @@ function checkCollision(gamePlotArray: Array<Array<boolean>>, currentShape: Shap
 }
 
 function copy(currentShape: Shape): Shape {
-    debugger
     let points: Array<Point> = []
     currentShape.points.forEach((value) => {
         points.push({
@@ -178,17 +183,17 @@ function copy(currentShape: Shape): Shape {
     }
 }
 
-function dropBlock(gamePlotArray: Array<Array<boolean>>, currentShape: Shape): Shape {
-    const afterMoveShape = copy(currentShape)
-    afterMoveShape.points.forEach((value) => {
+function dropBlock(gamePlotArray: Array<Array<boolean>>, currentShape: Shape): { currentShape: Shape, gamePlotArray: Array<Array<boolean>>} {
+    const beforeMoveShape = copy(currentShape)
+    currentShape.points.forEach((value) => {
         value.y += 1
     })
-    afterMoveShape.pivotPoint.y += 1
-    if (checkCollision(gamePlotArray, afterMoveShape)) {
-        globalGamePlotArray = removeLine(plotShape(gamePlotArray, currentShape))
-        return processNewShape()
+    currentShape.pivotPoint.y += 1
+    if (checkCollision(gamePlotArray, currentShape)) {
+        gamePlotArray = removeLine(plotShape(gamePlotArray, beforeMoveShape))
+        currentShape = processNewShape(gamePlotArray)
     }
-    return afterMoveShape
+    return {currentShape, gamePlotArray}
 }
 
 function removeLine(gamePlotArray: Array<Array<boolean>>): Array<Array<boolean>> {
@@ -207,8 +212,23 @@ function removeLine(gamePlotArray: Array<Array<boolean>>): Array<Array<boolean>>
             fullLines.push(y)
         }
     })
-    score += fullLines.length
-    fullLines.reverse()
+    switch (fullLines.length) {
+        case 1: {
+            score += scoreTable.one
+            break
+        }
+        case 2: {
+            score += scoreTable.two
+            break
+        }
+        case 3: {
+            score += scoreTable.three
+            break
+        }
+    }
+
+    score = Math.min(score, 99)
+
     fullLines.forEach((value) => {
         gamePlotArray[value] = [false, false, false, false, false]
         for (let i = value; i > 0; i--) {
@@ -218,18 +238,18 @@ function removeLine(gamePlotArray: Array<Array<boolean>>): Array<Array<boolean>>
     return gamePlotArray
 }
 
-function rotation(shape: Shape, angle: number): Shape {
+function rotation(currentShape: Shape, angle: number): Shape {
     // Rotation Matrix
     const angleInRad = angle * Math.PI / 180
-    shape.points.forEach((value, index) => {
-        const relativeX = shape.pivotPoint.x - value.x
-        const relativeY = shape.pivotPoint.y - value.y
+    currentShape.points.forEach((value, index) => {
+        const relativeX = currentShape.pivotPoint.x - value.x
+        const relativeY = currentShape.pivotPoint.y - value.y
         const rotatedX = relativeX * Math.cos(angleInRad) - relativeY * Math.sin(angleInRad)
         const rotatedY = relativeX * Math.sin(angleInRad) + relativeY * Math.cos(angleInRad)
-        value.x = Math.round(shape.pivotPoint.x + rotatedX)
-        value.y = Math.round(shape.pivotPoint.y + rotatedY)
+        value.x = Math.round(currentShape.pivotPoint.x + rotatedX)
+        value.y = Math.round(currentShape.pivotPoint.y + rotatedY)
     })
-    return shape
+    return currentShape
 }
 
 function moveOnXBy(gamePlotArray: Array<Array<boolean>>, currentShape: Shape, move: number): Shape {
@@ -239,16 +259,17 @@ function moveOnXBy(gamePlotArray: Array<Array<boolean>>, currentShape: Shape, mo
     })
     currentShape.pivotPoint.x += move
     if (checkCollision(gamePlotArray, currentShape)) {
-        currentShape = beforeMoveShape
+        return beforeMoveShape
     }
     return currentShape
 }
 
 function updateState(newState: State): void {
     if (newState === State.Play) {
-        globalCurrentShape = undefined
         score = 0
-        lastDrop = control.millis()
+        playedGames += 1
+        lastDrop = control.millis() + startingTime
+        gameStartTime = control.millis()
         globalGamePlotArray = [
             [false, false, false, false, false],
             [false, false, false, false, false],
@@ -256,22 +277,38 @@ function updateState(newState: State): void {
             [false, false, false, false, false],
             [false, false, false, false, false]
         ]
+        globalCurrentShape = processNewShape(globalGamePlotArray)
     }
     gameState = newState
-    basic.clearScreen()
 }
 
-function processNewShape(): Shape {
+function processNewShape(gamePlotArray: Array<Array<boolean>>): Shape {
     let currentShape = generateShape()
-    const isColliding = checkCollision(globalGamePlotArray, globalCurrentShape)
+    const isColliding = checkCollision(gamePlotArray, currentShape)
     if (isColliding) {
         updateState(State.Lost)
     }
     return currentShape
 }
 
-let globalCurrentShape: Shape = processNewShape()
+let score = 0
+let playedGames = 0
+let lastDrop = control.millis() + startingTime
+let gameStartTime = control.millis()
+let gameState = State.Play
+let globalGamePlotArray = [
+    [false, false, false, false, false],
+    [false, false, false, false, false],
+    [false, false, false, false, false],
+    [false, false, false, false, false],
+    [false, false, false, false, false]
+]
+let globalCurrentShape: Shape = processNewShape(globalGamePlotArray)
 basic.forever(function () {
+    if (control.millis() - gameStartTime < startingTime) {
+        whaleysans.showNumber(playedGames)
+        return
+    }
     switch (gameState) {
         case State.Play: {
             if (score === 99) {
@@ -279,8 +316,18 @@ basic.forever(function () {
                 break
             }
             display(plotShape(globalGamePlotArray, globalCurrentShape))
-            if (control.millis() - lastDrop > 1000) {
-                globalCurrentShape = dropBlock(globalGamePlotArray, globalCurrentShape)
+            let dropTime
+            if (score < 40) {
+                dropTime = dropTimeTable.under40
+            } else if (score < 80) {
+                dropTime = dropTimeTable.under80
+            } else {
+                dropTime = dropTimeTable.under100
+            }
+            if (control.millis() - lastDrop > dropTime) {
+                const output = dropBlock(globalGamePlotArray, globalCurrentShape)
+                globalCurrentShape = output.currentShape
+                globalGamePlotArray = output.gamePlotArray
                 lastDrop = control.millis()
             }
             break
@@ -306,10 +353,27 @@ basic.forever(function () {
     basic.pause(1 / frequence)
 })
 
-input.onButtonPressed(Button.A, function() {
+function processInput(buttonType: InputType, gamePlotArray: Array<Array<boolean>>, currentShape: Shape): Shape {
     switch (gameState) {
         case State.Play: {
-            globalCurrentShape = moveOnXBy(globalGamePlotArray, globalCurrentShape, -1)
+            switch (buttonType) {
+                case InputType.A: {
+                    currentShape = moveOnXBy(gamePlotArray, currentShape, -1)
+                    break
+                }
+                case InputType.B: {
+                    currentShape = moveOnXBy(gamePlotArray, currentShape, 1)
+                    break
+                }
+                case InputType.Logo: {
+                    const beforeMoveShape = copy(currentShape)
+                    currentShape = rotation(currentShape, rotationDirection)
+                    if (checkCollision(gamePlotArray, currentShape)) {
+                        currentShape = beforeMoveShape
+                    }
+                    break
+                }
+            }
             break
         }
         case State.Win: {
@@ -329,28 +393,34 @@ input.onButtonPressed(Button.A, function() {
             break
         }
     }
+    return currentShape
+}
+
+input.onButtonPressed(Button.A, function() {
+    if (control.millis() - gameStartTime < startingTime) {
+        return
+    }
+    globalCurrentShape = processInput(InputType.A, globalGamePlotArray, globalCurrentShape)
 })
 
 input.onButtonPressed(Button.B, function () {
+    if (control.millis() - gameStartTime < startingTime) {
+        return
+    }
+    globalCurrentShape = processInput(InputType.B, globalGamePlotArray, globalCurrentShape)
+})
+
+input.onLogoEvent(TouchButtonEvent.Pressed, function() {
+    if (control.millis() - gameStartTime < startingTime) {
+        return
+    }
     switch (gameState) {
         case State.Play: {
-            globalCurrentShape = moveOnXBy(globalGamePlotArray, globalCurrentShape, 1)
+            globalCurrentShape = processInput(InputType.Logo, globalGamePlotArray, globalCurrentShape)
             break
         }
-        case State.Win: {
-            updateState(State.ScoreWin)
-            break
-        }
-        case State.Lost: {
-            updateState(State.ScoreLost)
-            break
-        }
-        case State.ScoreWin: {
-            updateState(State.Win)
-            break
-        }
-        case State.ScoreLost: {
-            updateState(State.Lost)
+        default: {
+            updateState(State.Play)
             break
         }
     }
